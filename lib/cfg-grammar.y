@@ -472,6 +472,8 @@ LogRewrite *last_rewrite;
 %type   <num> positive_integer64
 %type   <num> nonnegative_integer
 %type   <num> nonnegative_integer64
+%type   <fnum> positive_float
+%type   <fnum> nonnegative_float
 %type	<cptr> path_no_check
 %type	<cptr> path_secret
 %type	<cptr> path_check
@@ -887,17 +889,17 @@ template_content_inner
         {
           GError *error = NULL;
 
-          CHECK_ERROR(log_template_compile(last_template, $1, &error), @1, "Error compiling template (%s)", error->message);
+          CHECK_ERROR_GERROR(log_template_compile(last_template, $1, &error), @1, error, "Error compiling template");
           free($1);
         }
         | LL_IDENTIFIER '(' string ')'
         {
           GError *error = NULL;
 
-          CHECK_ERROR(log_template_compile(last_template, $3, &error), @3, "Error compiling template (%s)", error->message);
+          CHECK_ERROR_GERROR(log_template_compile(last_template, $3, &error), @3, error, "Error compiling template");
           free($3);
 
-          CHECK_ERROR(log_template_set_type_hint(last_template, $1, &error), @1, "Error setting the template type-hint (%s)", error->message);
+          CHECK_ERROR_GERROR(log_template_set_type_hint(last_template, $1, &error), @1, error, "Error setting the template type-hint");
           free($1);
         }
         ;
@@ -1089,6 +1091,28 @@ positive_integer
           }
         ;
 
+nonnegative_float
+        : LL_FLOAT
+          {
+            CHECK_ERROR(($1 >= 0), @1, "It cannot be negative");
+          }
+        | nonnegative_integer
+          {
+            $$ = (double) $1;
+          }
+        ;
+
+positive_float
+        : LL_FLOAT
+          {
+            CHECK_ERROR(($1 > 0), @1, "Must be positive");
+          }
+        | positive_integer
+          {
+            $$ = (double) $1;
+          }
+        ;
+
 string_or_number
         : string                                { $$ = $1; }
         | LL_NUMBER                             { $$ = strdup(lexer->token_text->str); }
@@ -1261,7 +1285,7 @@ threaded_source_driver_option
         ;
 
 threaded_fetcher_driver_option
-        : KW_FETCH_NO_DATA_DELAY '(' nonnegative_integer ')' { log_threaded_fetcher_driver_set_fetch_no_data_delay(last_driver, $3); }
+        : KW_FETCH_NO_DATA_DELAY '(' nonnegative_float ')' { log_threaded_fetcher_driver_set_fetch_no_data_delay(last_driver, $3); }
         ;
 
 threaded_source_driver_option_flags

@@ -284,7 +284,7 @@ if (LIBNET_FOUND)
   set(SYSLOG_NG_ENABLE_SPOOF_SOURCE 1)
 endif()
 
-set(SYSLOG_NG_ENABLE_LINUX_CAPS ${LIBCAP_FOUND})
+set(SYSLOG_NG_ENABLE_LINUX_CAPS ${PC_LIBCAP_FOUND})
 
 if (WITH_GETTEXT)
     set(CMAKE_PREFIX_PATH ${WITH_GETTEXT})
@@ -369,7 +369,7 @@ else()
   set(EXTRA_WARNINGS
     -Wold-style-declaration
     -Wunused-but-set-parameter
-    -Wno-override-init
+    -Woverride-init
     ${EXTRA_WARNINGS}
     )
 endif()

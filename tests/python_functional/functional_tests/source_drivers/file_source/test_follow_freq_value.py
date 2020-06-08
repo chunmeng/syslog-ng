@@ -1,7 +1,6 @@
-#!/bin/sh
+#!/usr/bin/env python
 #############################################################################
-# Copyright (c) 2019 Balabit
-# Copyright (c) 2018 Kokan <kokaipeter@gmail.com>
+# Copyright (c) 2015-2018 Balabit
 #
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License version 2 as published
@@ -21,14 +20,27 @@
 # COPYING for details.
 #
 #############################################################################
+import pytest
 
-BASEDIR=$(dirname "$0")
-unset CDPATH
 
-cd $BASEDIR/../
+@pytest.mark.parametrize(
+    "follow_freq,expected", [
+        (1, True),
+        (1.0, True),
+        (0.1, True),
+        (0, True),
+        (0.0, True),
+        (-1, False),
+        (-1.0, False),
+        (-0.1, False),
+    ],
+)
+def test_follow_freq_value(config, syslog_ng, follow_freq, expected):
+    raw_config = '@version: {}\nsource s_file {{ file("input.log" follow-freq({})); }};'.format(config.get_version(), follow_freq)
+    config.set_raw_config(raw_config)
 
-if [ -d .git ] && [ ! "$MODE" = "release" ] && GIT_VERSION=$(git describe --tags --dirty --abbrev=7); then
-  echo $GIT_VERSION | sed 's/^syslog-ng-//' | tr '-' '.' | tr -d '\n'
-else
-  cat VERSION | tr -d '\n'
-fi
+    if expected is True:
+        syslog_ng.start(config)
+    else:
+        with pytest.raises(Exception):
+            syslog_ng.start(config)

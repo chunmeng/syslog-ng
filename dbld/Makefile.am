@@ -25,12 +25,11 @@ EXTRA_DIST += \
 	dbld/images/devshell.dockerfile \
 	dbld/images/centos-6.dockerfile \
 	dbld/images/centos-7.dockerfile \
-	dbld/images/fedora-30.dockerfile \
+	dbld/images/fedora-32.dockerfile \
 	dbld/images/debian-stretch.dockerfile \
 	dbld/images/debian-buster.dockerfile \
 	dbld/images/ubuntu-xenial.dockerfile \
 	dbld/images/ubuntu-bionic.dockerfile \
-	dbld/images/ubuntu-eoan.dockerfile \
 	dbld/images/ubuntu-focal.dockerfile \
 	dbld/images/README.md \
 	dbld/README.md
