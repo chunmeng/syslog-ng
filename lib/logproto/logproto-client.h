@@ -185,6 +185,8 @@ log_proto_client_get_fd(LogProtoClient *s)
   return s->transport->fd;
 }
 
+void log_proto_client_set_fd(LogProtoClient *s, gint fd);
+
 static inline void
 log_proto_client_reset_error(LogProtoClient *s)
 {

@@ -28,6 +28,7 @@
 #include "cfg.h"
 #include "plugin.h"
 #include "plugin-types.h"
+#include <unistd.h>
 
 gboolean
 log_proto_client_validate_options_method(LogProtoClient *s)
@@ -47,6 +48,21 @@ log_proto_client_free(LogProtoClient *s)
   if (s->free_fn)
     s->free_fn(s);
   g_free(s);
+}
+
+void
+log_proto_client_set_fd(LogProtoClient *s, gint fd)
+{
+  /* FIXME: Layering violation */
+  if (s->transport->fd == fd)
+    return;
+  if (dup2(fd, s->transport->fd) < 0) {
+      msg_error("Error swithing to new fd",
+                evt_tag_int("newfd", s->transport->fd),
+                evt_tag_int("oldfd", fd),
+                evt_tag_errno(EVT_TAG_OSERROR, errno));
+  }
+  close(fd);
 }
 
 void

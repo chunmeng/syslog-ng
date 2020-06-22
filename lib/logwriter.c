@@ -185,6 +185,14 @@ log_writer_set_queue(LogWriter *self, LogQueue *queue)
   log_queue_set_use_backlog(self->queue, TRUE);
 }
 
+void
+log_writer_set_fd(LogWriter *self, int fd)
+{
+  if (self->proto) {
+    log_proto_client_set_fd(self->proto, fd);
+  }
+}
+
 static void
 log_writer_work_perform(gpointer s, GIOCondition cond)
 {
@@ -1188,8 +1196,10 @@ log_writer_write_message(LogWriter *self, LogMessage *msg, LogPathOptions *path_
         {
           if (self->options && self->options->size_limit > 0 && self->options->size_limit < current_size)
             {
-              // Maybe here, use a new function created function log_proto_client_end();
-              close(log_proto_client_get_fd(self->proto));
+              // Maybe here, use a new function: log_proto_client_end();
+              msg_notice("Size exceed, notify to rotate",
+                evt_tag_int("size", current_size),
+                evt_tag_int("fd", log_proto_client_get_fd(self->proto)));
               log_pipe_notify(self->control, NC_ROTATE_REQUIRED, self);
             }
         }

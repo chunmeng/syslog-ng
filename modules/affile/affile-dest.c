@@ -140,7 +140,7 @@ affile_dw_reap(AFFileDestWriter *self)
 }
 
 static gboolean
-affile_dw_reopen_file_opener(AFFileDestWriter *self, LogProtoClient **proto)
+affile_dw_reopen_proto(AFFileDestWriter *self, LogProtoClient **proto)
 {
   int fd;
   struct stat st;
@@ -191,7 +191,7 @@ static gboolean
 affile_dw_reopen(AFFileDestWriter *self)
 {
   LogProtoClient *proto = NULL;
-  affile_dw_reopen_file_opener(self, &proto);
+  affile_dw_reopen_proto(self, &proto);
   log_writer_reopen(self->writer, proto);
 
   return TRUE;
@@ -212,28 +212,31 @@ affile_dw_rotate(AFFileDestWriter *self)
     {
       msg_error("Error creating the new filename ",
                 evt_tag_str("filename", self->filename),
-                evt_tag_errno(EVT_TAG_OSERROR, errno),
-                NULL);
+                evt_tag_errno(EVT_TAG_OSERROR, errno));
+      return FALSE;
     }
-  g_string_printf(new_name, "%s-%lu.%06lu-%010lu",
-                  self->filename,
-                  (gulong)time.tv_sec,
-                  (gulong)time.tv_usec,
-                  (gulong)g_random_int());
-
+  
+  // @TODO: Copy logrotate mechanism to support multiple rotation
+  g_string_printf(new_name, "%s.1",
+                  self->filename);
   old_name = g_string_new(self->filename);
 
   if (rename(self->filename, new_name->str) != 0)
     {
       msg_error("Error renaming file",
                 evt_tag_str("filename", self->filename),
-                evt_tag_errno(EVT_TAG_OSERROR, errno),
-                NULL);
+                evt_tag_errno(EVT_TAG_OSERROR, errno));
     }
 
   g_string_free(old_name, TRUE);
   g_string_free(new_name, TRUE);
-  res = affile_dw_reopen_file_opener(self, &proto);
+
+  // @WARN: This is not called in main thread and could not replace transport by log_writer_reopen
+  // This code only support regular file fd for my use case 
+  gint fd = -1;
+  if (file_opener_open_fd(self->owner->file_opener, self->filename, AFFILE_DIR_WRITE, &fd)) {
+    log_writer_set_fd(self->writer, fd);
+  }
   return res;
 }
 
@@ -382,7 +385,7 @@ affile_dw_notify(LogPipe *s, gint notify_code, gpointer user_data)
       affile_dw_reap(self);
       break;
     case NC_ROTATE_REQUIRED:
-      affile_dw_rotate((AFFileDestWriter *)s);
+      affile_dw_rotate(self);
       break;
     default:
       break;
