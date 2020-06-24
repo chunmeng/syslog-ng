@@ -29,7 +29,6 @@ add_subdirectory(eventlog)
 add_subdirectory(secret-storage)
 add_subdirectory(logthrsource)
 add_subdirectory(logthrdest)
-add_subdirectory(http-auth)
 add_subdirectory(signal-slot-connector)
 
 set(LIB_SUBDIR_HEADERS
@@ -54,7 +53,6 @@ set(LIB_SUBDIR_HEADERS
     ${TIMEUTILS_HEADERS}
     ${LOGTHRDEST_HEADERS}
     ${LOGTHRSOURCE_HEADERS}
-    ${HTTP_AUTH_HEADERS}
     ${SIGNAL_SLOT_CONNECTOR_HEADERS}
     ${CMAKE_CURRENT_BINARY_DIR}/filter/filter-expr-grammar.h
     ${CMAKE_CURRENT_BINARY_DIR}/rewrite/rewrite-expr-grammar.h
@@ -296,7 +294,6 @@ bison_target(ParserExprGrammar
 add_flex_bison_dependency(CfgLexer ParserExprGrammar)
 
 set(CORE_INCLUDE_DIRS
-    ${GLIB_INCLUDE_DIRS}
     ${Gettext_INCLUDE_DIR}
     ${IVYKIS_INCLUDE_DIR}
     ${LIBPCRE_INCLUDE_DIRS}
@@ -320,9 +317,9 @@ target_link_libraries(
     syslog-ng
   PUBLIC
     eventlog
-    ${GLIB_GMODULE_LIBRARIES}
-    ${GLIB_GTHREAD_LIBRARIES}
-    ${GLIB_LIBRARIES}
+    GLib::GLib
+    GLib::GThread
+    GLib::GModule
     ${Gettext_LIBRARIES}
     ${IVYKIS_LIBRARY}
     ${LIBPCRE_LIBRARIES}
@@ -362,7 +359,6 @@ install(FILES ${TRANSPORT_HEADERS} DESTINATION include/syslog-ng/transport)
 install(FILES ${CSV_SCANNER_HEADERS} DESTINATION include/syslog-ng/scanner/csv-scanner)
 install(FILES ${LOGTHRDEST_HEADERS} DESTINATION include/syslog-ng/logthrdest)
 install(FILES ${LOGTHRSOURCE_HEADERS} DESTINATION include/syslog-ng/logthrsource)
-install(FILES ${HTTP_AUTH_HEADERS} DESTINATION include/syslog-ng/http-auth)
 install(FILES ${SIGNAL_SLOT_CONNECTOR_HEADERS} DESTINATION include/syslog-ng/signal-slot-connector)
 
 set(TOOLS

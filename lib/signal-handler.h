@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2002-2013 Balabit
- * Copyright (c) 1998-2013 Balázs Scheidler
+ * Copyright (c) 2020 Balabit
+ * Copyright (c) 2020 Attila Szakacs
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -22,24 +22,4 @@
  *
  */
 
-#ifndef TRANSPORT_TRANSPORT_SOCKET_H_INCLUDED
-#define TRANSPORT_TRANSPORT_SOCKET_H_INCLUDED 1
-
-#include "logtransport.h"
-
-typedef struct _LogTransportSocket LogTransportSocket;
-struct _LogTransportSocket
-{
-  LogTransport super;
-  gint address_family;
-  gint proto;
-};
-
-void log_transport_dgram_socket_init_instance(LogTransportSocket *self, gint fd);
-LogTransport *log_transport_dgram_socket_new(gint fd);
-
-void log_transport_stream_socket_init_instance(LogTransportSocket *self, gint fd);
-void log_transport_stream_socket_free_method(LogTransport *s);
-LogTransport *log_transport_stream_socket_new(gint fd);
-
-#endif
+void signal_handler_exec_external_handler(gint signal);
