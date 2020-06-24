@@ -108,6 +108,14 @@ affile_dd_set_file_size_limit(LogDriver *s, goffset file_size_limit)
   self->writer_options.size_limit = file_size_limit;
 }
 
+void
+affile_dd_set_file_rotation(LogDriver *s, goffset file_rotation)
+{
+  AFFileDestDriver *self = (AFFileDestDriver *) s;
+  // Cap this at 9 to avoid dealing with sorting
+  self->writer_options.rotation = (file_rotation > 9) ? 9 : file_rotation;
+}
+
 static gchar *
 affile_dw_format_persist_name(AFFileDestWriter *self)
 {
@@ -201,42 +209,37 @@ static gboolean
 affile_dw_rotate(AFFileDestWriter *self)
 {
   LogProtoClient *proto = NULL;
-  gsize extra_length = 32;
-  GTimeVal time;
-  GString *new_name, *old_name;
-  gboolean res;
+  gsize extra = 5; // Only to support for filename.1234
+  GString *rot_name = NULL;
+  gboolean res = FALSE;
 
-  g_get_current_time(&time);
-  new_name = g_string_sized_new(g_strv_length(&self->filename) + extra_length);
-  if (new_name == NULL)
+  rot_name = g_string_sized_new(g_strv_length(&self->filename) + extra);
+  if (rot_name == NULL)
     {
       msg_error("Error creating the new filename ",
                 evt_tag_str("filename", self->filename),
                 evt_tag_errno(EVT_TAG_OSERROR, errno));
-      return FALSE;
+      return res;
     }
   
-  // @TODO: Copy logrotate mechanism to support multiple rotation
-  g_string_printf(new_name, "%s.1",
-                  self->filename);
-  old_name = g_string_new(self->filename);
-
-  if (rename(self->filename, new_name->str) != 0)
+  log_writer_get_next_rotation(self->writer, self->filename, rot_name);
+  // rot_name MUST always return a sane filename that's not self->filename
+  if (rename(self->filename, rot_name->str) != 0)
     {
       msg_error("Error renaming file",
                 evt_tag_str("filename", self->filename),
                 evt_tag_errno(EVT_TAG_OSERROR, errno));
     }
 
-  g_string_free(old_name, TRUE);
-  g_string_free(new_name, TRUE);
+  g_string_free(rot_name, TRUE);
 
-  // @WARN: This is not called in main thread and could not replace transport by log_writer_reopen
-  // This code only support regular file fd for my use case 
+  // @WARN: This is not called in main thread and could not replace transport by log_writer_reopen here
+  // This code probably work only for my use case (regular file fd)
   gint fd = -1;
-  if (file_opener_open_fd(self->owner->file_opener, self->filename, AFFILE_DIR_WRITE, &fd)) {
-    log_writer_set_fd(self->writer, fd);
-  }
+  if (file_opener_open_fd(self->owner->file_opener, self->filename, AFFILE_DIR_WRITE, &fd))
+    {
+      log_writer_set_fd(self->writer, fd);
+    }
   return res;
 }
 

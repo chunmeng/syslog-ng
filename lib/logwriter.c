@@ -39,8 +39,8 @@
 #include "timeutils/format.h"
 #include "timeutils/misc.h"
 
-#include <unistd.h>
 #include <assert.h>
+#include <glob.h>
 #include <string.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -191,6 +191,111 @@ log_writer_set_fd(LogWriter *self, int fd)
   if (self->proto) {
     log_proto_client_set_fd(self->proto, fd);
   }
+}
+
+#define ROTATION_DEFAULT   1
+#define ROTATION_OK        0
+#define ROTATION_ERROR    -1
+
+static int globerr(const char *pathname, int theerr)
+{
+    msg_error("Error accessing",
+            evt_tag_str("path", pathname),
+            evt_tag_int("err", theerr));
+
+    /* We want the glob operation to abort on error, so return 1 */
+    return 1;
+}
+
+gint
+log_writer_get_next_rotation(LogWriter *self, const gchar *filename, GString *rotate_name)
+{
+  char *glob_pattern = NULL;
+  glob_t glob_result;
+  int rc;
+  // If this method is called, ALWAYS return a sane filename to be rotate, even if rotation is not set
+  g_string_printf(rotate_name, "%s.1", filename); // Testing now, just return .1
+  if (self->options->rotation <= 0)
+    {
+      return ROTATION_DEFAULT; // Indicates if rotation is not configured, and default is used
+    }
+  else
+    {
+      // rotation is defined this way:
+      // rotation = n, there will be n rotated files, EXCLUDING the active file
+      // e.g. 2 => active: example.log, rotate: example.log.1, .2
+      // This means if size_limit is set, rotation=1 is default behavior, even when rotation is not set.
+      // We glob all the rotated files by a specific pattern: filename.*
+      // (There's no custom pattern support, and .* are expected to be an int)
+      // If the rotation count is not reached, we just use the last id + 1
+      // If the rotation count is reached, remove (rotation count - n) files, drop the lowest idx file
+      // swift all the file up by 1, and generate the filename.n as next available rotation
+      // e.g. rotation=3, and there are .1, .2 and .3
+      // rm .1, mv .2 -> .1, mv .3 -> .1, next rotation = .3
+      if (asprintf(&glob_pattern, "%s.*", filename) < 0)
+        {
+          msg_error("-- Error building glob pattern", evt_tag_errno(EVT_TAG_OSERROR, errno));
+          return ROTATION_ERROR;
+        }
+      rc = glob(glob_pattern, 0, globerr, &glob_result);
+      if (!rc)
+        {
+          // This algo assumes the result is sorted - which might not work for n >= 10
+          // i.e. file.10 is probably sorted before .2
+          // But I don't expect we will ever need more than a few rotation...
+          if (glob_result.gl_pathc < self->options->rotation)
+            {
+              int id = 0;
+              GString *file_pattern;
+              file_pattern = g_string_sized_new(g_strv_length((char **)&filename) + 5);
+              if (file_pattern == NULL)
+                {
+                  msg_error("-- Error building file pattern", evt_tag_errno(EVT_TAG_OSERROR, errno));
+                  goto cleanup;
+                }
+              g_string_printf(file_pattern, "%s%s", filename, ".%d");
+              if (sscanf((glob_result.gl_pathv)[glob_result.gl_pathc-1], file_pattern->str, &id) == 1)
+                {
+                  g_string_printf(rotate_name, "%s.%d", filename, id+1);
+                  msg_info("-- Next rotation", evt_tag_str("filename", rotate_name->str));
+                }
+              g_string_free(file_pattern, TRUE);
+              return ROTATION_OK;
+            }
+          else if (glob_result.gl_pathc > 1)
+            {
+              // Deal with rotation execeeded (in case the rotation is reduced from previous config)
+              int capIdx = glob_result.gl_pathc - 1;
+              if (glob_result.gl_pathc > self->options->rotation) {
+                for (size_t i = self->options->rotation; i < glob_result.gl_pathc; ++i)
+                  {
+                    msg_info("-- Remove backup files", evt_tag_str("filename", (glob_result.gl_pathv)[i]));
+                    unlink((glob_result.gl_pathv)[i]);
+                  }
+                capIdx = self->options->rotation - 1;
+              }
+              for (size_t i = 0; i < capIdx; ++i)
+                {
+                  msg_info("-- Rotate backup files",
+                                evt_tag_str("from", (glob_result.gl_pathv)[i+1]),
+                                evt_tag_str("to", (glob_result.gl_pathv)[i]));
+                  if (rename((glob_result.gl_pathv)[i+1], (glob_result.gl_pathv)[i]) != 0)
+                    {
+                      msg_error("Error renaming file",
+                                evt_tag_int("i", i),
+                                evt_tag_str("filename", (glob_result.gl_pathv)[i]),
+                                evt_tag_errno(EVT_TAG_OSERROR, errno));
+                    }
+                }
+                // Return the last entry
+                g_string_printf(rotate_name, "%s", (glob_result.gl_pathv)[capIdx]);
+            }
+        }
+cleanup:
+      globfree(&glob_result);
+      free(glob_pattern);
+  }
+  return ROTATION_OK;
 }
 
 static void
@@ -1709,6 +1814,7 @@ log_writer_options_defaults(LogWriterOptions *options)
   options->mark_mode = MM_GLOBAL;
   options->mark_freq = -1;
   options->size_limit = -1;
+  options->rotation = 0;
   host_resolve_options_defaults(&options->host_resolve_options);
 }
 

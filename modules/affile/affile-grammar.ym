@@ -93,6 +93,7 @@ affile_grammar_set_wildcard_file_source_driver(WildcardSourceDriver *sd)
 %token KW_MULTI_LINE_TIMEOUT
 %token KW_TIME_REAP
 %token KW_SIZE_LIMIT
+%token KW_ROTATION
 
 %token KW_WILDCARD_FILE
 %token KW_BASE_DIR
@@ -286,17 +287,18 @@ dest_affile_params
 
 dest_affile_options
 	: dest_affile_option dest_affile_options
-        |
+	|
 	;
 
 dest_affile_option
 	: dest_writer_option
 	| dest_driver_option
-        | file_perm_option
+	| file_perm_option
 	| KW_OPTIONAL '(' yesno ')'		{ last_driver->optional = $3; }
 	| KW_OVERWRITE_IF_OLDER '(' nonnegative_integer ')'	{ affile_dd_set_overwrite_if_older(last_driver, $3); }
 	| KW_FSYNC '(' yesno ')'		{ affile_dd_set_fsync(last_driver, $3); }
 	| KW_SIZE_LIMIT '(' nonnegative_integer ')'	{ affile_dd_set_file_size_limit(last_driver, $3); }
+	| KW_ROTATION '(' nonnegative_integer ')'	{ affile_dd_set_file_rotation(last_driver, $3); }
 	| dest_affile_common_option
 	;
 
