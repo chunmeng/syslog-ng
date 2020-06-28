@@ -70,6 +70,7 @@ struct _LogProtoClient
   /* FIXME: rename to something else */
   gboolean (*prepare)(LogProtoClient *s, gint *fd, GIOCondition *cond, gint *timeout);
   LogProtoStatus (*post)(LogProtoClient *s, LogMessage *logmsg, guchar *msg, gsize msg_len, gboolean *consumed);
+  LogProtoStatus (*get_size)(LogProtoClient *s, goffset *current_size);
   LogProtoStatus (*process_in)(LogProtoClient *s);
   LogProtoStatus (*flush)(LogProtoClient *s);
   gboolean (*validate_options)(LogProtoClient *s);
@@ -171,12 +172,20 @@ log_proto_client_post(LogProtoClient *s, LogMessage *logmsg, guchar *msg, gsize 
   return s->post(s, logmsg, msg, msg_len, consumed);
 }
 
+static inline LogProtoStatus
+log_proto_client_get_size(LogProtoClient *s, goffset *current_size)
+{
+  return s->get_size(s, current_size);
+}
+
 static inline gint
 log_proto_client_get_fd(LogProtoClient *s)
 {
   /* FIXME: Layering violation */
   return s->transport->fd;
 }
+
+void log_proto_client_set_fd(LogProtoClient *s, gint fd);
 
 static inline void
 log_proto_client_reset_error(LogProtoClient *s)

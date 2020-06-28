@@ -101,6 +101,21 @@ struct _AFFileDestWriter
   gboolean reopen_pending, queue_pending;
 };
 
+void
+affile_dd_set_file_size_limit(LogDriver *s, goffset file_size_limit)
+{
+  AFFileDestDriver *self = (AFFileDestDriver *) s;
+  self->writer_options.size_limit = file_size_limit;
+}
+
+void
+affile_dd_set_file_rotation(LogDriver *s, goffset file_rotation)
+{
+  AFFileDestDriver *self = (AFFileDestDriver *) s;
+  // Cap this at 9 to avoid dealing with sorting
+  self->writer_options.rotation = (file_rotation > 9) ? 9 : file_rotation;
+}
+
 static gchar *
 affile_dw_format_persist_name(AFFileDestWriter *self)
 {
@@ -133,12 +148,11 @@ affile_dw_reap(AFFileDestWriter *self)
 }
 
 static gboolean
-affile_dw_reopen(AFFileDestWriter *self)
+affile_dw_reopen_proto(AFFileDestWriter *self, LogProtoClient **proto)
 {
   int fd;
   struct stat st;
   GlobalConfig *cfg;
-  LogProtoClient *proto = NULL;
 
   cfg = log_pipe_get_config(&self->super);
   if (cfg)
@@ -164,7 +178,7 @@ affile_dw_reopen(AFFileDestWriter *self)
     {
       LogTransport *transport = file_opener_construct_transport(self->owner->file_opener, fd);
 
-      proto = file_opener_construct_dst_proto(self->owner->file_opener, transport,
+      *proto = file_opener_construct_dst_proto(self->owner->file_opener, transport,
                                               &self->owner->writer_options.proto_options.super);
     }
   else if (open_result == FILE_OPENER_RESULT_ERROR_PERMANENT)
@@ -178,9 +192,55 @@ affile_dw_reopen(AFFileDestWriter *self)
                 evt_tag_error(EVT_TAG_OSERROR));
     }
 
+  return TRUE;
+}
+
+static gboolean
+affile_dw_reopen(AFFileDestWriter *self)
+{
+  LogProtoClient *proto = NULL;
+  affile_dw_reopen_proto(self, &proto);
   log_writer_reopen(self->writer, proto);
 
   return TRUE;
+}
+
+static gboolean
+affile_dw_rotate(AFFileDestWriter *self)
+{
+  LogProtoClient *proto = NULL;
+  gsize extra = 5; // Only to support for filename.1234
+  GString *rot_name = NULL;
+  gboolean res = FALSE;
+
+  rot_name = g_string_sized_new(g_strv_length(&self->filename) + extra);
+  if (rot_name == NULL)
+    {
+      msg_error("Error creating the new filename ",
+                evt_tag_str("filename", self->filename),
+                evt_tag_errno(EVT_TAG_OSERROR, errno));
+      return res;
+    }
+  
+  log_writer_get_next_rotation(self->writer, self->filename, rot_name);
+  // rot_name MUST always return a sane filename that's not self->filename
+  if (rename(self->filename, rot_name->str) != 0)
+    {
+      msg_error("Error renaming file",
+                evt_tag_str("filename", self->filename),
+                evt_tag_errno(EVT_TAG_OSERROR, errno));
+    }
+
+  g_string_free(rot_name, TRUE);
+
+  // @WARN: This is not called in main thread and could not replace transport by log_writer_reopen here
+  // This code probably work only for my use case (regular file fd)
+  gint fd = -1;
+  if (file_opener_open_fd(self->owner->file_opener, self->filename, AFFILE_DIR_WRITE, &fd))
+    {
+      log_writer_set_fd(self->writer, fd);
+    }
+  return res;
 }
 
 static gboolean
@@ -326,6 +386,9 @@ affile_dw_notify(LogPipe *s, gint notify_code, gpointer user_data)
       break;
     case NC_CLOSE:
       affile_dw_reap(self);
+      break;
+    case NC_ROTATE_REQUIRED:
+      affile_dw_rotate(self);
       break;
     default:
       break;

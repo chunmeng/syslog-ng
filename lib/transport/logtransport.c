@@ -35,6 +35,7 @@ log_transport_free_method(LogTransport *s)
       msg_trace("Closing log transport fd",
                 evt_tag_int("fd", s->fd));
       close(s->fd);
+      s->fd = -1;
     }
 }
 
