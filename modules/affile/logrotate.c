@@ -26,7 +26,101 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <time.h>
+#include <zlib.h>
 #include "messages.h"
+
+// Add compression
+#define COMPRESS_CHUNK 16384
+
+static gint
+logrotate_compress_file(FILE *source, FILE *dest)
+{
+  int ret, flush;
+  unsigned have;
+  z_stream strm;
+  unsigned char in[COMPRESS_CHUNK];
+  unsigned char out[COMPRESS_CHUNK];
+
+  /* allocate deflate state */
+  strm.zalloc = Z_NULL;
+  strm.zfree = Z_NULL;
+  strm.opaque = Z_NULL;
+  ret = deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 15 + 16, 8, Z_DEFAULT_STRATEGY);
+  if (ret != Z_OK) {
+    return ret;
+  }
+
+  /* compress until end of file */
+  do {
+    strm.avail_in = fread(in, 1, COMPRESS_CHUNK, source);
+    if (ferror(source)) {
+      (void)deflateEnd(&strm);
+      return Z_ERRNO;
+    }
+    flush = feof(source) ? Z_FINISH : Z_NO_FLUSH;
+    strm.next_in = in;
+    /* run deflate() on input until output buffer not full, finish
+       compression if all of source has been read in */
+    do {
+      strm.avail_out = COMPRESS_CHUNK;
+      strm.next_out = out;
+
+      ret = deflate(&strm, flush);    /* no bad return value */
+      /* assert(ret != Z_STREAM_ERROR);  /* state not clobbered */
+
+      have = COMPRESS_CHUNK - strm.avail_out;
+      if (fwrite(out, 1, have, dest) != have || ferror(dest)) {
+        (void)deflateEnd(&strm);
+        return Z_ERRNO;
+      }
+    } while (strm.avail_out == 0);
+    /* assert(strm.avail_in == 0);     /* all input will be used */
+
+    /* done when last data in file processed */
+  } while (flush != Z_FINISH);
+  /* assert(ret == Z_STREAM_END);        /* stream will be complete */
+
+  /* clean up and return */
+  (void)deflateEnd(&strm);
+  return Z_OK;
+}
+
+static gboolean
+logrotate_compress(const char* srcFileName, const char* destFileName)
+{
+  FILE *source = NULL;
+  FILE *dest = NULL;
+  gboolean result = TRUE;
+  int error = Z_OK;
+  source = fopen(srcFileName,"rb");
+  if (source == NULL) {
+    msg_error("Error opening the source log file ",
+              evt_tag_str("filename", srcFileName),
+              evt_tag_errno(EVT_TAG_OSERROR, errno));
+    return FALSE;
+  }
+  dest = fopen(destFileName, "wb");
+  if (dest == NULL) {
+    fclose(source);
+    msg_error("Error creating the rotated log file ",
+              evt_tag_str("filename", srcFileName),
+              evt_tag_errno(EVT_TAG_OSERROR, errno));
+    return FALSE;
+  }
+  error = logrotate_compress_file(source, dest);
+  if (error != Z_OK) {
+    result = FALSE;
+  }
+  fclose(source);
+  fclose(dest);
+  if (result == FALSE) {
+    msg_error("Error compressing the rotated log file ",
+              evt_tag_str("filename", destFileName),
+              evt_tag_errno(EVT_TAG_OSERROR, error));
+  }
+  unlink(srcFileName);
+  return result;
+}
 
 #define LR_DEFAULT_SIZE 1000000 // 1MB
 #define LR_DEFAULT_ROTATIONS 1
@@ -62,7 +156,7 @@ gchar *get_log_file_name(const gchar *filename, gsize rotation_suffix)
     }
   else
     {
-      return g_strdup_printf("%s.%ld", filename, (long) rotation_suffix);
+      return g_strdup_printf("%s.%ld.gz", filename, (long) rotation_suffix);
     }
 }
 
@@ -106,11 +200,27 @@ gint rotate_log_file(const gchar *filename, gsize roation_suffix, gsize max_rota
         }
       else
         {
+          // if current file is the main log file, we compress it to .1.gz
+          // if current file is .N.gz, we rename it to .(N+1).gz
           gchar *rotated_filename = get_log_file_name(filename, roation_suffix + 1);
-          msg_debug("Rotating log file",
+          msg_info("Rotating log file",
                     evt_tag_str("filename", current_filename),
                     evt_tag_str("new_filename", rotated_filename));
-          res = rename(current_filename, rotated_filename);
+          if (roation_suffix == 0) // 0 means the main log file
+            {
+              if (logrotate_compress(current_filename, rotated_filename) == FALSE)
+                {
+                  msg_error("Error compressing log file during logrotate",
+                            evt_tag_str("filename", current_filename),
+                            evt_tag_str("new_filename", rotated_filename),
+                            evt_tag_errno("errno", errno));
+                  res = -1;
+                }
+            }
+          else
+            {
+              res = rename(current_filename, rotated_filename);
+            }
           g_free(rotated_filename);
 
           if (res != 0)

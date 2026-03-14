@@ -66,9 +66,13 @@ elseif(SYSLOG_NG_HAVE_INOTIFY)
   )
 endif ()
 
+find_package(ZLIB REQUIRED)
+
 add_module(
   TARGET affile
   GRAMMAR affile-grammar
+  INCLUDES ${ZLIB_INCLUDE_DIRS}
+  DEPENDS ${ZLIB_LIBRARIES}
   SOURCES ${AFFILE_SOURCES}
 )
 
