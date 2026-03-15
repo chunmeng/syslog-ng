@@ -100,6 +100,7 @@ affile_grammar_set_wildcard_file_source_driver(WildcardSourceDriver *sd)
 %token KW_LOGROTATE_ENABLE
 %token KW_LOGROTATE_SIZE
 %token KW_LOGROTATE_ROTATIONS
+%token KW_LOGROTATE_COMPRESS
 
 %token KW_WILDCARD_FILE
 %token KW_BASE_DIR
@@ -303,6 +304,7 @@ dest_affile_logrotate_option
 	: KW_LOGROTATE_ENABLE '(' yesno ')' { affile_dd_set_logrotate_enable(last_driver, $3); }
 	| KW_LOGROTATE_SIZE '(' positive_integer ')' { affile_dd_set_logrotate_size(last_driver, $3); }
 	| KW_LOGROTATE_ROTATIONS '(' positive_integer ')' { affile_dd_set_logrotate_rotations(last_driver, $3); }
+	| KW_LOGROTATE_COMPRESS '(' string ')' { affile_dd_set_logrotate_compress(last_driver, $3); }
 
 dest_afpipe_params
   : template_content

@@ -648,6 +648,13 @@ void affile_dd_set_logrotate_size(LogDriver *s, gint size)
   self->logrotate_options.size = size;
 }
 
+void affile_dd_set_logrotate_compress(LogDriver *s, const gchar *format)
+{
+  AFFileDestDriver *self = (AFFileDestDriver *) s;
+
+  logrotate_set_compress(&self->logrotate_options, format);
+}
+
 
 /**
  * affile_dd_reuse_writer:
@@ -955,6 +962,7 @@ affile_dd_free(LogPipe *s)
 
   log_template_unref(self->filename_template);
   log_writer_options_destroy(&self->writer_options);
+  logrotate_options_destroy(&self->logrotate_options);
   file_opener_options_deinit(&self->file_opener_options);
   file_opener_free(self->file_opener);
   g_free(self->symlink_as);

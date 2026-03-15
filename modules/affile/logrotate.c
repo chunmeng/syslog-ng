@@ -131,6 +131,34 @@ void logrotate_options_defaults(LogRotateOptions *logrotate_options)
   logrotate_options->size = LR_DEFAULT_SIZE;
   logrotate_options->max_rotations = LR_DEFAULT_ROTATIONS;
   logrotate_options->pending = FALSE;
+  logrotate_options->compress = FALSE;
+  logrotate_options->compress_format = NULL;
+}
+
+void logrotate_options_destroy(LogRotateOptions *logrotate_options)
+{
+  g_free(logrotate_options->compress_format);
+}
+
+void logrotate_set_compress(LogRotateOptions *logrotate_options, const gchar *format)
+{
+  logrotate_options->compress = TRUE;
+  if (format == NULL || format[0] == '\0')
+    {
+      logrotate_options->compress_format = g_strdup("gz");
+    }
+  else
+    {
+      if (strcmp(format, "gz") != 0)
+        {
+          msg_warning("Unknown compression format, defaulting to gz", evt_tag_str("format", format));
+          logrotate_options->compress_format = g_strdup("gz");
+        }
+      else
+        {
+          logrotate_options->compress_format = g_strdup(format);
+        }
+    }
 }
 
 gboolean logrotate_is_enabled(LogRotateOptions *logrotate_options)
@@ -148,7 +176,7 @@ gboolean logrotate_is_pending(LogRotateOptions *logrotate_options)
   return logrotate_options && logrotate_options->pending;
 }
 
-gchar *get_log_file_name(const gchar *filename, gsize rotation_suffix)
+gchar *get_log_file_name(const gchar *filename, gsize rotation_suffix, LogRotateOptions *options)
 {
   if (rotation_suffix == 0)
     {
@@ -156,16 +184,19 @@ gchar *get_log_file_name(const gchar *filename, gsize rotation_suffix)
     }
   else
     {
-      return g_strdup_printf("%s.%ld.gz", filename, (long) rotation_suffix);
+      if (options->compress)
+        return g_strdup_printf("%s.%ld.gz", filename, (long) rotation_suffix);
+      else
+        return g_strdup_printf("%s.%ld", filename, (long) rotation_suffix);
     }
 }
 
-gsize first_log_file_to_rotate(const gchar *filename, gsize max_rotations)
+gsize first_log_file_to_rotate(const gchar *filename, LogRotateOptions *options)
 {
   gchar *log_filename;
-  for (gsize i = 1; i <= max_rotations; i++)
+  for (gsize i = 1; i <= options->max_rotations; i++)
     {
-      log_filename = get_log_file_name(filename, i);
+      log_filename = get_log_file_name(filename, i, options);
       gboolean log_file_exists = g_file_test(log_filename, G_FILE_TEST_EXISTS);
       g_free(log_filename);
 
@@ -175,17 +206,17 @@ gsize first_log_file_to_rotate(const gchar *filename, gsize max_rotations)
         }
     }
 
-  return max_rotations;
+  return options->max_rotations;
 }
 
-gint rotate_log_file(const gchar *filename, gsize roation_suffix, gsize max_rotations)
+gint rotate_log_file(const gchar *filename, gsize roation_suffix, LogRotateOptions *options)
 {
-  gchar *current_filename = get_log_file_name(filename, roation_suffix);
+  gchar *current_filename = get_log_file_name(filename, roation_suffix, options);
   gint res = 0;
 
   if (g_file_test(current_filename, G_FILE_TEST_EXISTS))
     {
-      if (roation_suffix == max_rotations)
+      if (roation_suffix == options->max_rotations)
         {
           msg_debug("Deleting oldest log file",
                     evt_tag_str("filename", current_filename));
@@ -202,19 +233,26 @@ gint rotate_log_file(const gchar *filename, gsize roation_suffix, gsize max_rota
         {
           // if current file is the main log file, we compress it to .1.gz
           // if current file is .N.gz, we rename it to .(N+1).gz
-          gchar *rotated_filename = get_log_file_name(filename, roation_suffix + 1);
+          gchar *rotated_filename = get_log_file_name(filename, roation_suffix + 1, options);
           msg_info("Rotating log file",
                     evt_tag_str("filename", current_filename),
                     evt_tag_str("new_filename", rotated_filename));
           if (roation_suffix == 0) // 0 means the main log file
             {
-              if (logrotate_compress(current_filename, rotated_filename) == FALSE)
+              if (options->compress)
                 {
-                  msg_error("Error compressing log file during logrotate",
-                            evt_tag_str("filename", current_filename),
-                            evt_tag_str("new_filename", rotated_filename),
-                            evt_tag_errno("errno", errno));
-                  res = -1;
+                  if (logrotate_compress(current_filename, rotated_filename) == FALSE)
+                    {
+                      msg_error("Error compressing log file during logrotate",
+                                evt_tag_str("filename", current_filename),
+                                evt_tag_str("new_filename", rotated_filename),
+                                evt_tag_errno("errno", errno));
+                      res = -1;
+                    }
+                }
+              else
+                {
+                   res = rename(current_filename, rotated_filename);
                 }
             }
           else
@@ -273,12 +311,12 @@ LogRotateStatus logrotate_do_rotate(LogRotateOptions *logrotate_options, const g
     }
 
   // (2) check for first rotated log file which does not exist
-  gsize max_rotation_suffix = first_log_file_to_rotate(filename, logrotate_options->max_rotations);
+  gsize max_rotation_suffix = first_log_file_to_rotate(filename, logrotate_options);
 
   // (3) rename existing log files up to max_rotation_suffix
   for (gint i = max_rotation_suffix; i >= 0; i--)
     {
-      if (rotate_log_file(filename, i, logrotate_options->max_rotations) != 0)
+      if (rotate_log_file(filename, i, logrotate_options) != 0)
         {
           return LR_ERROR;
         }

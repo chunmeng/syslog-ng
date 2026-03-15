@@ -38,12 +38,16 @@ typedef struct _LogRotateOptions
   gsize size;
   gsize max_rotations;
   gboolean pending;
+  gboolean compress;
+  gchar *compress_format;
 } LogRotateOptions;
 
 gboolean logrotate_is_enabled(LogRotateOptions *logrotate_options);
 gboolean logrotate_is_required(LogRotateOptions *logrotate_options, const gsize filesize);
 gboolean logrotate_is_pending(LogRotateOptions *logrotate_options);
 void logrotate_options_defaults(LogRotateOptions *logrotate_options);
+void logrotate_options_destroy(LogRotateOptions *logrotate_options);
+void logrotate_set_compress(LogRotateOptions *logrotate_options, const gchar *format);
 LogRotateStatus logrotate_do_rotate(LogRotateOptions *logrotate_options, const gchar *filename);
 
 #endif

@@ -65,6 +65,7 @@ void affile_dd_set_time_reap(LogDriver *s, gint time_reap);
 void affile_dd_set_logrotate_enable(LogDriver *s, gboolean enable);
 void affile_dd_set_logrotate_rotations(LogDriver *s, gint max_rotations);
 void affile_dd_set_logrotate_size(LogDriver *s, gint size);
+void affile_dd_set_logrotate_compress(LogDriver *s, const gchar *format);
 void affile_dd_global_init(void);
 
 #endif

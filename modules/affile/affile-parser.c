@@ -60,6 +60,7 @@ static CfgLexerKeyword affile_keywords[] =
   { "enable",             KW_LOGROTATE_ENABLE },
   { "size",               KW_LOGROTATE_SIZE },
   { "rotations",          KW_LOGROTATE_ROTATIONS},
+  { "compress",           KW_LOGROTATE_COMPRESS},
   { NULL }
 };
 
