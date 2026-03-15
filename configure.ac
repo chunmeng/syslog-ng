@@ -1982,6 +1982,11 @@ if test "x$enable_http" != "xno" && test "x$with_libcurl" != "xno"; then
         if test "x$HAVE_ZLIB" = "x1"; then
             AC_CHECK_LIB([z], [deflate], [ZLIB_LIBS="-lz"; AC_SUBST([ZLIB_LIBS])], [HAVE_ZLIB=0])
         fi
+
+        CHECK_HEADER_AND_DEFINE([zip.h], [HAVE_LIBZIP])
+        if test "x$HAVE_LIBZIP" = "x1"; then
+            AC_CHECK_LIB([zip], [zip_open], [LIBZIP_LIBS="-lzip"; AC_SUBST([LIBZIP_LIBS])], [HAVE_LIBZIP=0])
+        fi
     fi
 else
     enable_http="no"

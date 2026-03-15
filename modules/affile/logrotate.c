@@ -27,13 +27,16 @@
 #include <unistd.h>
 #include <time.h>
 #include <zlib.h>
+#if SYSLOG_NG_HAVE_LIBZIP
+#include <zip.h>
+#endif
 #include "messages.h"
 
 // Add compression
 #define COMPRESS_CHUNK 16384
 
 static gint
-logrotate_compress_file(FILE *source, FILE *dest)
+logrotate_compress_file_gz(FILE *source, FILE *dest)
 {
   int ret, flush;
   unsigned have;
@@ -86,7 +89,7 @@ logrotate_compress_file(FILE *source, FILE *dest)
 }
 
 static gboolean
-logrotate_compress(const char* srcFileName, const char* destFileName)
+logrotate_compress_gz(const char* srcFileName, const char* destFileName)
 {
   FILE *source = NULL;
   FILE *dest = NULL;
@@ -107,7 +110,7 @@ logrotate_compress(const char* srcFileName, const char* destFileName)
               evt_tag_errno(EVT_TAG_OSERROR, errno));
     return FALSE;
   }
-  error = logrotate_compress_file(source, dest);
+  error = logrotate_compress_file_gz(source, dest);
   if (error != Z_OK) {
     result = FALSE;
   }
@@ -118,7 +121,90 @@ logrotate_compress(const char* srcFileName, const char* destFileName)
               evt_tag_str("filename", destFileName),
               evt_tag_errno(EVT_TAG_OSERROR, error));
   }
-  unlink(srcFileName);
+  return result;
+}
+
+static gboolean
+logrotate_compress_zip(const char* srcFileName, const char* destFileName)
+{
+#if SYSLOG_NG_HAVE_LIBZIP
+  int error = 0;
+  zip_t *archive = zip_open(destFileName, ZIP_CREATE | ZIP_TRUNCATE, &error);
+  if (!archive)
+    {
+      msg_error("Error creating the rotated zip file",
+                evt_tag_str("filename", destFileName),
+                evt_tag_int("error", error));
+      return FALSE;
+    }
+
+  zip_source_t *source = zip_source_file(archive, srcFileName, 0, 0);
+  if (!source)
+    {
+      msg_error("Error creating zip source from log file",
+                evt_tag_str("filename", srcFileName));
+      zip_close(archive);
+      return FALSE;
+    }
+
+  gchar *base_name = g_path_get_basename(srcFileName);
+  if (zip_file_add(archive, base_name, source, ZIP_FL_OVERWRITE) < 0)
+    {
+      msg_error("Error adding log file to zip archive",
+                evt_tag_str("filename", srcFileName),
+                evt_tag_str("zip_error", zip_strerror(archive)));
+      g_free(base_name);
+      zip_source_free(source);
+      zip_close(archive);
+      return FALSE;
+    }
+  g_free(base_name);
+
+  if (zip_close(archive) < 0)
+    {
+      msg_error("Error closing the rotated zip file",
+                evt_tag_str("filename", destFileName));
+      return FALSE;
+    }
+
+  return TRUE;
+#else
+  msg_error("ZIP compression is not supported, libzip is missing",
+            evt_tag_str("filename", destFileName));
+  return FALSE;
+#endif
+}
+
+static gboolean
+logrotate_compress(const char* srcFileName, const char* destFileName, LogRotateOptions *options)
+{
+  gboolean result = FALSE;
+
+  if (strcmp(options->compress_format, "gz") == 0)
+    {
+      result = logrotate_compress_gz(srcFileName, destFileName);
+    }
+  else if (strcmp(options->compress_format, "zip") == 0)
+    {
+#if SYSLOG_NG_HAVE_LIBZIP
+      result = logrotate_compress_zip(srcFileName, destFileName);
+#else
+      msg_error("ZIP compression is not supported, libzip is missing",
+                evt_tag_str("format", options->compress_format));
+      return FALSE;
+#endif
+    }
+  else
+    {
+      msg_error("Unsupported compression format", evt_tag_str("format", options->compress_format));
+      return FALSE;
+    }
+
+  if (result)
+    {
+      unlink(srcFileName);
+    }
+
   return result;
 }
 
@@ -149,7 +235,7 @@ void logrotate_set_compress(LogRotateOptions *logrotate_options, const gchar *fo
     }
   else
     {
-      if (strcmp(format, "gz") != 0)
+      if (strcmp(format, "gz") != 0 && strcmp(format, "zip") != 0)
         {
           msg_warning("Unknown compression format, defaulting to gz", evt_tag_str("format", format));
           logrotate_options->compress_format = g_strdup("gz");
@@ -185,7 +271,7 @@ gchar *get_log_file_name(const gchar *filename, gsize rotation_suffix, LogRotate
   else
     {
       if (options->compress)
-        return g_strdup_printf("%s.%ld.gz", filename, (long) rotation_suffix);
+        return g_strdup_printf("%s.%ld.%s", filename, (long) rotation_suffix, options->compress_format);
       else
         return g_strdup_printf("%s.%ld", filename, (long) rotation_suffix);
     }
@@ -241,7 +327,7 @@ gint rotate_log_file(const gchar *filename, gsize roation_suffix, LogRotateOptio
             {
               if (options->compress)
                 {
-                  if (logrotate_compress(current_filename, rotated_filename) == FALSE)
+                  if (logrotate_compress(current_filename, rotated_filename, options) == FALSE)
                     {
                       msg_error("Error compressing log file during logrotate",
                                 evt_tag_str("filename", current_filename),
