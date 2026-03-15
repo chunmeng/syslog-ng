@@ -226,23 +226,30 @@ void logrotate_options_destroy(LogRotateOptions *logrotate_options)
   g_free(logrotate_options->compress_format);
 }
 
+gboolean logrotate_is_supported_format(const gchar *format)
+{
+  if (!format || format[0] == '\0') return FALSE;
+  if (strcmp(format, "gz") == 0) return TRUE;
+#if SYSLOG_NG_HAVE_LIBZIP
+  if (strcmp(format, "zip") == 0) return TRUE;
+#endif
+  return FALSE;
+}
+
+/* This is called only when the compress() option is provided  */
 void logrotate_set_compress(LogRotateOptions *logrotate_options, const gchar *format)
 {
   logrotate_options->compress = TRUE;
-  if (format == NULL || format[0] == '\0')
+  if (logrotate_is_supported_format(format))
+    {
+      logrotate_options->compress_format = g_strdup(format);
+    }
+  else // NULL/empty/any other value default to gz
     {
       logrotate_options->compress_format = g_strdup("gz");
-    }
-  else
-    {
-      if (strcmp(format, "gz") != 0 && strcmp(format, "zip") != 0)
+      if (format && format[0] != 0)
         {
-          msg_warning("Unknown compression format, defaulting to gz", evt_tag_str("format", format));
-          logrotate_options->compress_format = g_strdup("gz");
-        }
-      else
-        {
-          logrotate_options->compress_format = g_strdup(format);
+          msg_warning("Compression format not supported, defaulting to gz", evt_tag_str("format", format));
         }
     }
 }
